@@ -1,69 +1,135 @@
-name: Build Ronin Kernel Android 12-5.10 (Marble/Ingres)
+name: Marble Kernel Ronin
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - melt-rebase
+
+permissions:
+  contents: write
+
+env:
+  KERNEL_REPO: https://github.com/Pzqqt/android_kernel_xiaomi_marble.git
+  KERNEL_BRANCH: melt-rebase
+  AK3_REPO: https://github.com/osm0sis/AnyKernel3.git
+  KSUNEXT_BRANCH: next
+  SUSFS_BRANCH: gki-android12-5.10 # Ganti ke gki-android13-5.15 jika kernel Anda menggunakan versi 5.15
 
 jobs:
-  build-kernel:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-22.04
+
     steps:
-      - name: Maximize Build Space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 2048
-          swap-size-mb: 4096
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
+      - name: Checkout Workflow Repository
+        uses: actions/checkout@v4
 
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git curl make gcc clang bc libssl-dev flex bison libelf-dev lld python3 zip
-          mkdir -p ~/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-          chmod a+x ~/bin/repo
-          echo "~/bin" >> $GITHUB_PATH
 
-      - name: Sync GKI Source
-        run: |
-          mkdir -p ${{ github.workspace }}/workspace
-          cd ${{ github.workspace }}/workspace
-          repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10 --depth=1
-          repo sync -c -j$(nproc) --no-tags --no-clone-bundle
-          rm -rf .repo
+          sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            ccache \
+            clang \
+            curl \
+            flex \
+            gcc \
+            git \
+            libelf-dev \
+            libssl-dev \
+            lld \
+            llvm \
+            python3 \
+            rsync \
+            unzip \
+            wget \
+            zip
 
-      - name: Integrate KernelSU & SUSFS
+      - name: Configure CCache
         run: |
-          cd ${{ github.workspace }}/workspace/common
-          # Instal KernelSU
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-          
-          # Clone SUSFS
-          git clone --depth=1 -b gki-android12-5.10 https://gitlab.com/simonpunk/susfs4ksu.git ../susfs4ksu
-          
-          # Patch KernelSU
-          cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch KernelSU/
-          cd KernelSU && patch -p1 < 10_enable_susfs_for_ksu.patch && cd ..
-          
-          # Patch Kernel Source
-          cp ../susfs4ksu/kernel_patches/fs/susfs.c fs/
-          cp ../susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/
-          patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-gki-android12-5.10.patch
+          ccache -M 10G
+          ccache -s
 
-      - name: Update Defconfig
+      - name: Clone Kernel Source
         run: |
-          cd ${{ github.workspace }}/workspace/common
-          echo 'CONFIG_LOCALVERSION="-Ronin-Kernel-MultiDevice"' >> arch/arm64/configs/gki_defconfig
-          cat <<EOF >> arch/arm64/configs/gki_defconfig
+          git clone \
+            --depth=1 \
+            --branch=${KERNEL_BRANCH} \
+            ${KERNEL_REPO} kernel
+
+      - name: Show Repository Information
+        run: |
+          cd kernel
+
+          echo "Current Branch:"
+          git branch
+
+          echo ""
+          echo "Top Level:"
+          ls -la
+
+          echo ""
+          echo "Available Defconfigs:"
+          find arch/arm64/configs -type f | head -100 || true
+
+      - name: Prepare Build Environment
+        run: |
+          mkdir -p kernel/out
+
+      - name: Detect Defconfig
+        id: defconfig
+        run: |
+          cd kernel
+
+          DEFCONFIG=$(find arch/arm64/configs \
+            -type f \
+            | grep -Ei "marble|vendor" \
+            | head -n 1)
+
+          if [ -z "$DEFCONFIG" ]; then
+            echo "No suitable defconfig found"
+            exit 1
+          fi
+
+          DEFCONFIG_NAME=$(basename "$DEFCONFIG")
+
+          echo "DEFCONFIG_NAME=$DEFCONFIG_NAME" >> $GITHUB_ENV
+
+          echo "Using: $DEFCONFIG_NAME"
+
+      - name: Setup KernelSU Next & SUSFS
+        run: |
+          cd kernel
+
+          echo "--- Mengunduh dan Memasang KernelSU Next ---"
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s ${KSUNEXT_BRANCH}
+
+          echo "--- Mengunduh repositori SUSFS ---"
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b ${SUSFS_BRANCH} ../susfs
+
+          echo "--- Menyalin file susfs ---"
+          cp ../susfs/kernel_patches/fs/* fs/
+          cp ../susfs/kernel_patches/include/linux/* include/linux/
+
+          echo "--- Menerapkan Patch ke direktori KernelSU Next ---"
+          cd KernelSU-Next
+          patch -p1 < ../../susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
+          cd ..
+
+          echo "--- Menerapkan Patch ke Kernel source ---"
+          patch -p1 < ../susfs/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch || echo "Peringatan: Beberapa patch kernel mungkin perlu penyesuaian."
+
+          echo "--- Mengaktifkan konfigurasi KSU Next dan SUSFS di defconfig ---"
+          cat <<EOF >> arch/arm64/configs/${DEFCONFIG_NAME}
+
+          # Konfigurasi KernelSU Next & SUSFS
           CONFIG_KSU=y
           CONFIG_KSU_SUSFS=y
           CONFIG_KSU_SUSFS_SUS_PATH=y
           CONFIG_KSU_SUSFS_SUS_MOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
           CONFIG_KSU_SUSFS_SUS_KSTAT=y
           CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y
           CONFIG_KSU_SUSFS_TRY_UMOUNT=y
@@ -73,27 +139,90 @@ jobs:
 
       - name: Build Kernel
         run: |
-          cd ${{ github.workspace }}/workspace
-          LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+          cd kernel
 
-      - name: Package AnyKernel3
+          export ARCH=arm64
+          export SUBARCH=arm64
+
+          export LLVM=1
+          export LLVM_IAS=1
+
+          make O=out ${DEFCONFIG_NAME}
+
+          make -j$(nproc) O=out
+
+      - name: Locate Kernel Image
         run: |
-          cd ${{ github.workspace }}/workspace
-          git clone https://github.com/osm0sis/AnyKernel3.git
-          cd AnyKernel3
-          rm -rf .git
-          
-          # Konfigurasi untuk Marble dan Ingres
-          sed -i 's/kernel.string=.*/kernel.string=Ronin Kernel for Marble\/Ingres/g' anykernel.sh
-          sed -i 's/device.name1=.*/device.name1=marble/g' anykernel.sh
-          sed -i 's/device.name2=.*/device.name2=ingres/g' anykernel.sh
-          sed -i 's/block=.*/block=auto/g' anykernel.sh
-          
-          cp ../out/android12-5.10/dist/Image .
-          zip -r9 "../Ronin-Kernel-Marble-Ingres.zip" *
+          cd kernel
 
-      - name: Upload Artifact
+          IMAGE=$(find out \
+            -type f \
+            \( \
+              -name "Image" -o \
+              -name "Image.gz" -o \
+              -name "Image.gz-dtb" \
+            \) \
+            | head -n 1)
+
+          if [ -z "$IMAGE" ]; then
+            echo "Kernel image not found"
+            exit 1
+          fi
+
+          echo "IMAGE_PATH=$IMAGE" >> $GITHUB_ENV
+
+          echo "Found image:"
+          echo "$IMAGE"
+
+      - name: Clone AnyKernel3
+        run: |
+          git clone \
+            --depth=1 \
+            ${AK3_REPO} \
+            AnyKernel3
+
+      - name: Copy Kernel Image
+        run: |
+          cp kernel/${IMAGE_PATH} AnyKernel3/
+
+      - name: Remove Git Metadata
+        run: |
+          rm -rf AnyKernel3/.git
+
+      - name: Generate Build Info
+        run: |
+          echo "Build Date: $(date)" > AnyKernel3/build-info.txt
+          echo "Branch: ${KERNEL_BRANCH}" >> AnyKernel3/build-info.txt
+          echo "Commit: ${GITHUB_SHA}" >> AnyKernel3/build-info.txt
+          echo "Include: KernelSU Next + SUSFS" >> AnyKernel3/build-info.txt
+
+      - name: Create Flashable ZIP
+        run: |
+          ZIP_NAME="Marble-Kernel-KSUNext-SUSFS-${GITHUB_RUN_NUMBER}.zip"
+
+          cd AnyKernel3
+
+          zip -r9 "../${ZIP_NAME}" .
+
+          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
+
+      - name: Upload ZIP Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Ronin-Kernel-Marble-Ingres
-          path: workspace/Ronin-Kernel-Marble-Ingres.zip
+          name: Marble-Kernel-Ronin-KSUNext-SUSFS
+          path: ${{ env.ZIP_NAME }}
+
+      - name: Create Release Tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          TAG="build-${GITHUB_RUN_NUMBER}-KSUNext"
+          echo "TAG_NAME=${TAG}" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: Marble Kernel Ronin KSU-Next+SUSFS ${{ github.run_number }}
+          files: ${{ env.ZIP_NAME }}
+          generate_release_notes: true
