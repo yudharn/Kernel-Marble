@@ -115,10 +115,7 @@ jobs:
           cp ../susfs/kernel_patches/fs/* fs/
           cp ../susfs/kernel_patches/include/linux/* include/linux/
 
-          echo "--- Menerapkan Patch ke direktori KernelSU (ReSukiSU) ---"
-          cd KernelSU
-          patch -p1 < ../../susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
-          cd ..
+          # Langkah patch ke direktori KernelSU dilewati karena ReSukiSU umumnya sudah membawa hook SUSFS secara native.
 
           echo "--- Menerapkan Patch ke Kernel source ---"
           # Menyesuaikan nama patch dengan format yang ada di repositori susfs4ksu untuk branch 5.10
@@ -138,7 +135,6 @@ jobs:
           CONFIG_KSU_SUSFS_SPOOF_UNAME=y
           CONFIG_KSU_SUSFS_ENABLE_LOG=y
           EOF
-
 
       - name: Build Kernel
         run: |
