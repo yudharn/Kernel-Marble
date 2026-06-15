@@ -67,24 +67,34 @@ jobs:
         run: |
           cd kernel_workspace
           
-          # Deteksi otomatis nama direktori KSU (KernelSU atau KernelSU-Next)
-          if [ -d "KernelSU-Next" ]; then
-            KSU_DIR="KernelSU-Next"
-          elif [ -d "KernelSU" ]; then
-            KSU_DIR="KernelSU"
-          else
-            echo "❌ Error: Direktori KernelSU tidak ditemukan setelah setup!"
+          echo "🔍 Mencari lokasi asli direktori KernelSU / KernelSU-Next..."
+          
+          # Perintah 'find' ini akan mencari folder (case-insensitive) di root dan di dalam folder 'drivers'
+          KSU_DIR=$(find . -maxdepth 2 -type d \( -iname "KernelSU-Next" -o -iname "KernelSU" -o -iname "kernelsu" \) | head -n 1)
+          
+          # Jika folder benar-benar tidak ada
+          if [ -z "$KSU_DIR" ]; then
+            echo "❌ Error: Direktori KernelSU sama sekali tidak ditemukan setelah setup.sh dijalankan!"
+            echo "📂 Menampilkan isi root direktori kernel untuk dianalisis (Silakan cek log GitHub Actions):"
+            ls -la
+            echo "📂 Menampilkan isi direktori drivers/ (jika ada):"
+            [ -d "drivers" ] && ls -la drivers/
             exit 1
           fi
           
-          echo "✅ Direktori KSU terdeteksi di: $KSU_DIR"
+          # Membersihkan format path (menghapus awalan './' jika ada)
+          KSU_DIR=${KSU_DIR#./}
+          echo "✅ Direktori KSU berhasil ditemukan di: $KSU_DIR"
           
-          # Salin patch ke direktori yang ditemukan
-          cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch $KSU_DIR/
+          # Menyalin patch ke folder yang berhasil ditemukan
+          cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch "$KSU_DIR/"
           
-          # Masuk ke direktori dan eksekusi patch
-          cd $KSU_DIR
-          patch -p1 < 10_enable_susfs_for_ksu.patch || { echo "❌ Gagal melakukan patch pada $KSU_DIR"; exit 1; }
+          # Masuk ke direktori tersebut dan jalankan patch
+          cd "$KSU_DIR"
+          patch -p1 < 10_enable_susfs_for_ksu.patch || { 
+            echo "❌ Gagal patch di $KSU_DIR. File mungkin bentrok atau path di dalam patch tidak cocok."; 
+            exit 1; 
+          }
           echo "✅ Patch SUSFS di $KSU_DIR Berhasil!"
           
       - name: 🛠️ Patch SUSFS ke Kernel 5.10
