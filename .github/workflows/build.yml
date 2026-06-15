@@ -49,11 +49,18 @@ jobs:
           echo "=== Ukuran penyimpanan SETELAH menghapus .repo ==="
           df -h .
 
-      # Langkah 5: Memasang KernelSU Official (Menggantikan KSU Next)
+      # Langkah 5: Memasang KernelSU Official & Checkout ke v0.9.5 (KUNCI PERBAIKAN)
       - name: Integrate Official KernelSU
         run: |
           cd ${{ github.workspace }}/workspace/common
+          # Setup KernelSU dari branch main agar terinjeksi ke Makefile & Kconfig
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          
+          # PENTING: Mundurkan source KernelSU ke v0.9.5 agar patch SUSFS bisa masuk
+          cd KernelSU
+          git fetch --tags
+          git checkout v0.9.5
+          echo "KernelSU berhasil di-checkout ke versi v0.9.5"
 
       # Langkah 6.1: Download SUSFS v2.1.0 Source (Khusus 5.10)
       - name: 📥 Clone SUSFS v2.1.0 Source
@@ -61,15 +68,20 @@ jobs:
           cd ${{ github.workspace }}
           git clone --depth=1 -b gki-android12-5.10 https://gitlab.com/simonpunk/susfs4ksu.git susfs4ksu
 
-      # Langkah 6.2: Patch SUSFS ke KernelSU Official
+      # Langkah 6.2: Patch SUSFS ke KernelSU (Ditambah --fuzz=3)
       - name: 🛠️ Patch SUSFS ke KernelSU
         run: |
-          cd ${{ github.workspace }}/workspace/common
-          cp ${{ github.workspace }}/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch KernelSU/
+          cd ${{ github.workspace }}/workspace/common/KernelSU
+          cp ${{ github.workspace }}/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch .
           
-          cd KernelSU
-          patch -p1 < 10_enable_susfs_for_ksu.patch || { echo "Gagal patch KernelSU"; exit 1; }
-          echo "Patch KernelSU untuk SUSFS Berhasil!"
+          # Menggunakan --fuzz=3 agar toleran terhadap offset baris kecil
+          patch -p1 --fuzz=3 < 10_enable_susfs_for_ksu.patch || { 
+            echo "❌ Gagal patch KernelSU!";
+            echo "Log error (reject):";
+            cat *.rej || true;
+            exit 1; 
+          }
+          echo "✅ Patch KernelSU untuk SUSFS Berhasil!"
 
       # Langkah 6.3: Patch SUSFS ke Kernel 5.10
       - name: 🛠️ Patch SUSFS ke Kernel 5.10
@@ -85,8 +97,8 @@ jobs:
           cp "${{ github.workspace }}/susfs4ksu/kernel_patches/$PATCH_FILE" .
           
           # Eksekusi Patching
-          patch -p1 < $PATCH_FILE || { echo "Gagal patch Kernel Source 5.10"; exit 1; }
-          echo "Patching SUSFS v2.1.0 ke Kernel 5.10 Berhasil!"
+          patch -p1 --fuzz=3 < $PATCH_FILE || { echo "❌ Gagal patch Kernel Source 5.10"; exit 1; }
+          echo "✅ Patching SUSFS v2.1.0 ke Kernel 5.10 Berhasil!"
           
       # Langkah 7: Modifikasi gki_defconfig (KSU, SUSFS & Identitas Taro)
       - name: Update Defconfig
@@ -123,8 +135,8 @@ jobs:
           cd AnyKernel3
           rm -rf .git
           
-          # Optimasi khusus perangkat berchipset Taro (SD 8 Gen 1) / GKI
-          sed -i 's/kernel.string=.*/kernel.string=Ronin Kernel GKI 12 (Taro) with KSU+SUSFS/g' anykernel.sh
+          # Optimasi khusus perangkat berchipset Taro (SD 8 Gen 1)
+          sed -i 's/kernel.string=.*/kernel.string=Ronin Kernel GKI 12 (Taro) KSU Official + SUSFS/g' anykernel.sh
           sed -i 's/device.name1=.*/device.name1=taro/g' anykernel.sh
           sed -i 's/device.name2=.*/device.name2=waipio/g' anykernel.sh
           sed -i 's/device.name3=.*/device.name3=cape/g' anykernel.sh
@@ -143,4 +155,3 @@ jobs:
           path: |
             ${{ github.workspace }}/workspace/out/android12-5.10/dist/boot.img
             ${{ github.workspace }}/workspace/Ronin-Kernel-Taro-GKI-12-5.10-KSU-SUSFS.zip
-            
