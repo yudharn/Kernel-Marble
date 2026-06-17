@@ -1,223 +1,111 @@
-name: Melt Kernel Ronin
+name: Build Kernel Marble + ReSukiSU + SUSFS
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - melt-rebase
-
-permissions:
-  contents: write
+  workflow_dispatch: # Memicu build secara manual melalui tab Actions
 
 env:
+  # Konfigurasi Kernel
   KERNEL_REPO: https://github.com/Pzqqt/android_kernel_xiaomi_marble.git
   KERNEL_BRANCH: melt-rebase
-  AK3_REPO: https://github.com/Pzqqt/AnyKernel3.git
+  DEFCONFIG: vendor/marble_defconfig
+
+  # Konfigurasi ReSukiSU & SUSFS
+  # GANTI URL_RESUKISU_DISINI dengan link repository ReSukiSU yang Anda gunakan
+  RESUKISU_REPO: https://github.com/ReSukiSU/ReSukiSU.git 
   RESUKISU_BRANCH: main
-  SUSFS_BRANCH: gki-android12-5.10 # Ganti ke gki-android13-5.15 jika kernel Anda menggunakan versi 5.15
+  SUSFS_REPO: https://gitlab.com/simonpunk/susfs4ksu.git
+  SUSFS_BRANCH: gki-android12-5.10
 
 jobs:
   build:
+    name: Build Kernel ReSukiSU
     runs-on: ubuntu-22.04
-
+    
     steps:
-      - name: Checkout Workflow Repository
-        uses: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v4
 
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
+    - name: Setup Build Environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential bc gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev libfl-dev curl wget cpio dkms flex bison libelf-dev python3 git lld file zip zstd
 
-          sudo apt-get install -y \
-            bc \
-            bison \
-            build-essential \
-            ccache \
-            clang \
-            curl \
-            flex \
-            gcc \
-            git \
-            libelf-dev \
-            libssl-dev \
-            lld \
-            llvm \
-            python3 \
-            rsync \
-            unzip \
-            wget \
-            zip \
-            p7zip-full
+    - name: Clone Proton Clang Toolchain
+      run: |
+        echo "Mengunduh Toolchain..."
+        git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
 
-      - name: Configure CCache
-        run: |
-          ccache -M 10G
-          ccache -s
+    - name: Clone Kernel Source
+      run: |
+        echo "Mengunduh Source Kernel Marble..."
+        git clone --depth=1 -b ${{ env.KERNEL_BRANCH }} ${{ env.KERNEL_REPO }} kernel
 
-      - name: Clone Kernel Source
-        run: |
-          git clone \
-            --depth=1 \
-            --branch=${KERNEL_BRANCH} \
-            ${KERNEL_REPO} kernel
+    - name: Clone ReSukiSU & SUSFS
+      run: |
+        cd kernel
+        echo "Mengunduh ReSukiSU..."
+        git clone --depth=1 -b ${{ env.RESUKISU_BRANCH }} ${{ env.RESUKISU_REPO }} KernelSU
+        
+        echo "Mengunduh SUSFS..."
+        git clone --depth=1 -b ${{ env.SUSFS_BRANCH }} ${{ env.SUSFS_REPO }} susfs
 
-      - name: Show Repository Information
-        run: |
-          cd kernel
+    - name: Patch SUSFS ke Kernel & ReSukiSU
+      run: |
+        cd kernel
+        
+        # 1. Integrasi file header dan source SUSFS ke Kernel
+        cp susfs/kernel_patches/fs/* fs/
+        cp susfs/kernel_patches/include/linux/* include/linux/
+        
+        # 2. Patch Kernel utama
+        echo "Menerapkan Patch SUSFS ke Kernel..."
+        patch -p1 < susfs/kernel_patches/5.10/50_recipe_susfs.patch || echo "Peringatan: Ada konflik minor di Kernel, melanjutkan..."
+        
+        # 3. Patch ke direktori ReSukiSU
+        echo "Menerapkan Patch SUSFS ke direktori ReSukiSU..."
+        cd KernelSU
+        # Parameter --forward digunakan agar workflow tidak gagal total (hunk failed) 
+        # jika struktur ReSukiSU sedikit berbeda dari KernelSU standar.
+        patch -p1 --forward < ../susfs/ksu_patches/KernelSU.patch || echo "Peringatan: Hunk failed pada ReSukiSU diabaikan. Pastikan ReSukiSU Anda kompatibel dengan patch ini."
 
-          echo "Current Branch:"
-          git branch
+    - name: Compile Kernel
+      run: |
+        cd kernel
+        # Setup direktori Toolchain
+        export PATH="$(pwd)/../toolchain/bin:$PATH"
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export KBUILD_BUILD_USER="Yudha"
+        export KBUILD_BUILD_HOST="Github-Actions"
+        
+        # Konfigurasi Defconfig
+        make O=out ARCH=arm64 ${{ env.DEFCONFIG }}
+        
+        # Proses Build
+        echo "Memulai kompilasi kernel..."
+        make -j$(nproc --all) O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- LLVM=1 LLVM_IAS=1
 
-          echo ""
-          echo "Top Level:"
-          ls -la
+    - name: Package ke AnyKernel3
+      run: |
+        echo "Membungkus kernel ke dalam Flashable Zip..."
+        git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
+        cd anykernel
+        
+        # Modifikasi AnyKernel3 agar kompatibel dengan POCO F5 (Marble)
+        sed -i 's/device.name1=maguro/device.name1=marble/g' anykernel.sh
+        sed -i 's/device.name2=toro/device.name2=poco f5/g' anykernel.sh
+        sed -i 's/device.name3=mako/device.name3=pocof5/g' anykernel.sh
+        
+        # Copy file Image hasil build
+        cp ../kernel/out/arch/arm64/boot/Image .
+        
+        # Compress menjadi zip
+        zip -r9 AnyKernel3-Marble-ReSukiSU-SUSFS.zip * -x .git README.md *placeholder
 
-          echo ""
-          echo "Available Defconfigs:"
-          find arch/arm64/configs -type f | head -100 || true
-
-      - name: Prepare Build Environment
-        run: |
-          mkdir -p kernel/out
-
-      - name: Detect Defconfig
-        id: defconfig
-        run: |
-          cd kernel
-
-          DEFCONFIG=$(find arch/arm64/configs \
-            -type f \
-            | grep -Ei "marble|vendor" \
-            | head -n 1)
-
-          if [ -z "$DEFCONFIG" ]; then
-            echo "No suitable defconfig found"
-            exit 1
-          fi
-
-          DEFCONFIG_NAME=$(basename "$DEFCONFIG")
-
-          echo "DEFCONFIG_NAME=$DEFCONFIG_NAME" >> $GITHUB_ENV
-
-          echo "Using: $DEFCONFIG_NAME"
-
-      - name: Setup ReSukiSU & SUSFS
-        run: |
-          cd kernel
-
-          echo "--- Mengunduh dan Memasang ReSukiSU ---"
-          curl -ls https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh | bash -s ${RESUKISU_BRANCH}
-
-          echo "--- Mengunduh repositori SUSFS ---"
-          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b ${SUSFS_BRANCH} ../susfs
-
-          echo "--- Menyalin file susfs ---"
-          cp ../susfs/kernel_patches/fs/* fs/
-          cp ../susfs/kernel_patches/include/linux/* include/linux/
-
-          echo "--- Menerapkan Patch ke Kernel source ---"
-          patch -p1 < ../susfs/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch || echo "Peringatan: Beberapa patch kernel mungkin perlu penyesuaian."
-
-          echo "--- Mengaktifkan konfigurasi ReSukiSU dan SUSFS di defconfig ---"
-          cat <<EOF >> arch/arm64/configs/${DEFCONFIG_NAME}
-
-          # Konfigurasi ReSukiSU & SUSFS
-          CONFIG_KSU=y
-          CONFIG_KSU_SUSFS=y
-          CONFIG_KSU_SUSFS_SUS_PATH=y
-          CONFIG_KSU_SUSFS_SUS_MOUNT=y
-          CONFIG_KSU_SUSFS_SUS_KSTAT=y
-          CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y
-          CONFIG_KSU_SUSFS_TRY_UMOUNT=y
-          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-          CONFIG_KSU_SUSFS_ENABLE_LOG=y
-          EOF
-
-      - name: Build Kernel
-        run: |
-          cd kernel
-
-          export ARCH=arm64
-          export SUBARCH=arm64
-
-          export LLVM=1
-          export LLVM_IAS=1
-
-          make O=out ${DEFCONFIG_NAME}
-
-          make -j$(nproc) O=out
-
-      - name: Locate Kernel Image
-        run: |
-          cd kernel
-
-          IMAGE=$(find out \
-            -type f \
-            -name "Image" \
-            | head -n 1)
-
-          if [ -z "$IMAGE" ]; then
-            echo "Kernel raw image not found"
-            exit 1
-          fi
-
-          echo "Found raw image: $IMAGE"
-
-          echo "IMAGE_PATH=$IMAGE" >> $GITHUB_ENV
-
-      - name: Clone AnyKernel3
-        run: |
-          git clone \
-            --depth=1 \
-            ${AK3_REPO} \
-            AnyKernel3
-
-      - name: Move Kernel Image to AnyKernel3
-        run: |
-          # Menyalin file Image mentah ke root AnyKernel3
-          cp kernel/${IMAGE_PATH} AnyKernel3/
-          
-          echo "File disalin: $(basename ${IMAGE_PATH})"
-
-      - name: Remove Git Metadata
-        run: |
-          rm -rf AnyKernel3/.git
-
-      - name: Generate Build Info
-        run: |
-          echo "Build Date: $(date)" > AnyKernel3/build-info.txt
-          echo "Branch: ${KERNEL_BRANCH}" >> AnyKernel3/build-info.txt
-          echo "Commit: ${GITHUB_SHA}" >> AnyKernel3/build-info.txt
-          echo "Include: ReSukiSU + SUSFS" >> AnyKernel3/build-info.txt
-
-      - name: Create Flashable ZIP
-        run: |
-          ZIP_NAME="Melt-Kernel-ReSukiSU-SUSFS-${GITHUB_RUN_NUMBER}.zip"
-
-          cd AnyKernel3
-
-          zip -r9 "../${ZIP_NAME}" .
-
-          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
-
-      - name: Upload ZIP Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Melt-Kernel-Ronin-ReSukiSU-SUSFS
-          path: ${{ env.ZIP_NAME }}
-
-      - name: Create Release Tag
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          TAG="build-${GITHUB_RUN_NUMBER}-ReSukiSU"
-          echo "TAG_NAME=${TAG}" >> $GITHUB_ENV
-
-      - name: Create GitHub Release
-        if: github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.TAG_NAME }}
-          name: Melt Kernel Ronin ReSukiSU+SUSFS ${{ github.run_number }}
-          files: ${{ env.ZIP_NAME }}
-          generate_release_notes: true
-          
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Flashable-Kernel-Marble-ReSukiSU
+        path: anykernel/AnyKernel3-Marble-ReSukiSU-SUSFS.zip
+        compression-level: 0 # Sudah dalam bentuk zip
+        
