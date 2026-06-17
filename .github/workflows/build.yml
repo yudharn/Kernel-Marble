@@ -13,7 +13,6 @@ env:
   KERNEL_REPO: https://github.com/Pzqqt/android_kernel_xiaomi_marble.git
   KERNEL_BRANCH: melt-rebase
   AK3_REPO: https://github.com/Pzqqt/AnyKernel3.git
-  AK3_BRANCH: Marble-Melt
   RESUKISU_BRANCH: main
   SUSFS_BRANCH: gki-android12-5.10 # Ganti ke gki-android13-5.15 jika kernel Anda menggunakan versi 5.15
 
@@ -47,7 +46,8 @@ jobs:
             rsync \
             unzip \
             wget \
-            zip
+            zip \
+            p7zip-full
 
       - name: Configure CCache
         run: |
@@ -112,14 +112,10 @@ jobs:
           git clone https://gitlab.com/simonpunk/susfs4ksu.git -b ${SUSFS_BRANCH} ../susfs
 
           echo "--- Menyalin file susfs ---"
-          # Menggunakan wildcard (*) agar tidak error jika ada file spesifik yang absen di branch ini
           cp ../susfs/kernel_patches/fs/* fs/
           cp ../susfs/kernel_patches/include/linux/* include/linux/
 
-          # Langkah patch ke direktori KernelSU dilewati karena ReSukiSU umumnya sudah membawa hook SUSFS secara native.
-
           echo "--- Menerapkan Patch ke Kernel source ---"
-          # Menyesuaikan nama patch dengan format yang ada di repositori susfs4ksu untuk branch 5.10
           patch -p1 < ../susfs/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch || echo "Peringatan: Beberapa patch kernel mungkin perlu penyesuaian."
 
           echo "--- Mengaktifkan konfigurasi ReSukiSU dan SUSFS di defconfig ---"
@@ -157,43 +153,31 @@ jobs:
 
           IMAGE=$(find out \
             -type f \
-            \( \
-              -name "Image" -o \
-              -name "Image.gz" -o \
-              -name "Image.gz-dtb" \
-            \) \
+            -name "Image" \
             | head -n 1)
 
           if [ -z "$IMAGE" ]; then
-            echo "Kernel image not found"
+            echo "Kernel raw image not found"
             exit 1
           fi
 
-          echo "IMAGE_PATH=$IMAGE" >> $GITHUB_ENV
+          echo "Found raw image: $IMAGE"
 
-          echo "Found image:"
-          echo "$IMAGE"
+          echo "IMAGE_PATH=$IMAGE" >> $GITHUB_ENV
 
       - name: Clone AnyKernel3
         run: |
           git clone \
             --depth=1 \
-            -b ${AK3_BRANCH} \
             ${AK3_REPO} \
             AnyKernel3
 
-      - name: Copy and Compress Kernel Image to 7z
+      - name: Move Kernel Image to AnyKernel3
         run: |
-          # 1. Salin file kernel mentah ke folder AnyKernel3
+          # Menyalin file Image mentah ke root AnyKernel3
           cp kernel/${IMAGE_PATH} AnyKernel3/
           
-          cd AnyKernel3
-          
-          # 2. Ambil nama file asli (misal: Image atau Image.gz)
-          ORIGINAL_FILE=$(basename ${IMAGE_PATH})
-          
-          # 3. Kompres file tersebut menjadi image.7z
-          7z a image.7z $ORIGINAL_FILE
+          echo "File disalin: $(basename ${IMAGE_PATH})"
 
       - name: Remove Git Metadata
         run: |
