@@ -53,20 +53,40 @@ jobs:
       run: |
         cd kernel
         
-        # 1. Integrasi file header dan source SUSFS ke Kernel
-        cp susfs/kernel_patches/fs/* fs/
-        cp susfs/kernel_patches/include/linux/* include/linux/
+        # 1. Integrasi file header dan source SUSFS ke Kernel (Gunakan -r untuk memastikan subdirektori terbawa)
+        cp -r susfs/kernel_patches/fs/* fs/
+        cp -r susfs/kernel_patches/include/linux/* include/linux/
         
         # 2. Patch Kernel utama
         echo "Menerapkan Patch SUSFS ke Kernel..."
         patch -p1 < susfs/kernel_patches/5.10/50_recipe_susfs.patch || echo "Peringatan: Ada konflik minor di Kernel, melanjutkan..."
         
         # 3. Patch ke direktori ReSukiSU
+        # PERHATIAN: Jika ini gagal (hunk failed), sangat disarankan untuk tidak mengabaikannya 
+        # dan perbaiki konflik kodenya di repository ReSukiSU Anda sendiri.
         echo "Menerapkan Patch SUSFS ke direktori ReSukiSU..."
         cd KernelSU
-        # Parameter --forward digunakan agar workflow tidak gagal total (hunk failed) 
-        # jika struktur ReSukiSU sedikit berbeda dari KernelSU standar.
-        patch -p1 --forward < ../susfs/ksu_patches/KernelSU.patch || echo "Peringatan: Hunk failed pada ReSukiSU diabaikan. Pastikan ReSukiSU Anda kompatibel dengan patch ini."
+        patch -p1 --forward < ../susfs/ksu_patches/KernelSU.patch || echo "PERINGATAN KRITIS: Patch ReSukiSU gagal. Kernel mungkin error saat dicompile atau SUSFS tidak aktif."
+
+    - name: Konfigurasi Defconfig dan Makefile
+      run: |
+        cd kernel
+        
+        # Memastikan folder KernelSU ikut di-compile oleh kernel utama
+        if ! grep -q "KernelSU" fs/Makefile; then
+          echo "obj-y += KernelSU/" >> fs/Makefile
+        fi
+
+        # Menambahkan konfigurasi KSU dan SUSFS ke file defconfig Marble
+        echo "CONFIG_KSU=y" >> arch/arm64/configs/${{ env.DEFCONFIG }}
+        echo "CONFIG_KSU_SUSFS=y" >> arch/arm64/configs/${{ env.DEFCONFIG }}
+        echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> arch/arm64/configs/${{ env.DEFCONFIG }}
+        echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> arch/arm64/configs/${{ env.DEFCONFIG }}
+        echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> arch/arm64/configs/${{ env.DEFCONFIG }}
+        echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y" >> arch/arm64/configs/${{ env.DEFCONFIG }}
+        echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> arch/arm64/configs/${{ env.DEFCONFIG }}
+        echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> arch/arm64/configs/${{ env.DEFCONFIG }}
+        echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> arch/arm64/configs/${{ env.DEFCONFIG }}
 
     - name: Compile Kernel
       run: |
