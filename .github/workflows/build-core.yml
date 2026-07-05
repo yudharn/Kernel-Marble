@@ -262,6 +262,13 @@ jobs:
               active_commit=""
               active_digest="${LLVM_22_1_8_SHA256}"
               ;;
+            clang-19-pgo)
+              active_bin="${CLANG19_PGO_BIN}"
+              active_id="${TOOLCHAIN}"
+              active_version="Clang 19 (+pgo+bolt+thinLTO+mlgo)"
+              active_commit=""
+              active_digest="${CLANG19_PGO_SHA256}"
+              ;;
             *)
               echo "::error::Unsupported toolchain: ${TOOLCHAIN}"
               exit 1
