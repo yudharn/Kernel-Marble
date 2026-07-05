@@ -61,6 +61,7 @@ on:
         options:
           - android-r416183b
           - llvm-22.1.8
+          - clang-19-pgo
       enable_ccache:
         description: Enable ccache
         type: boolean
