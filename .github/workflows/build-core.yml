@@ -217,7 +217,33 @@ jobs:
           tar -xJf "${archive}" -C llvm-22.1.8 --strip-components=1
           test -x "${LLVM_22_1_8_BIN}/clang"
           "${LLVM_22_1_8_BIN}/clang" --version
+          
+      - name: Restore Clang 19 (pgo+bolt+thinLTO+mlgo)
+        if: ${{ inputs.toolchain == 'clang-19-pgo' }}
+        id: clang19-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: clang-19-pgo
+          key: marble-builder-clang19pgo-v1-${{ runner.os }}-${{ runner.arch }}
 
+      - name: Fetch Clang 19 (pgo+bolt+thinLTO+mlgo)
+        if: ${{ inputs.toolchain == 'clang-19-pgo' }}
+        run: |
+          source config/marble.env
+          if [[ -x "${CLANG19_PGO_BIN}/clang" ]]; then
+            "${CLANG19_PGO_BIN}/clang" --version
+            exit 0
+          fi
+          archive="${RUNNER_TEMP}/clang-19-pgo.tar.gz"
+          curl --fail --location --retry 3 --retry-delay 10 \
+            --output "${archive}" "${CLANG19_PGO_URL}"
+          echo "${CLANG19_PGO_SHA256} ${archive}" | sha256sum -c -
+          rm -rf clang-19-pgo
+          mkdir -p clang-19-pgo
+          tar -xf "${archive}" -C clang-19-pgo --strip-components=1
+          test -x "${CLANG19_PGO_BIN}/clang"
+          "${CLANG19_PGO_BIN}/clang" --version
+          
       - name: Select active toolchain
         run: |
           source config/marble.env
