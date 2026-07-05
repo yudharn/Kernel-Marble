@@ -1,8 +1,6 @@
 <div align="center">
 
-# 🪨 Marble Kernel Builder
-
-**CI-driven AnyKernel3 kernel builder for Poco F5 / Redmi Note 12 Turbo**
+# ✧ Marble Kernel Builder ✧
 
 [![Build](https://img.shields.io/badge/GitHub_Actions-CI_Builder-2088FF?logo=githubactions&logoColor=white)](https://github.com/mohdakil2426/marble-kernel-builder/actions)
 [![KernelSU](https://img.shields.io/badge/KernelSU-Supported-4CAF50?logo=linux&logoColor=white)](https://github.com/tiann/KernelSU)
