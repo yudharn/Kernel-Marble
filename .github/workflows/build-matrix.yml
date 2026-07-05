@@ -57,7 +57,7 @@ on:
       toolchain:
         description: Compiler toolchain
         type: choice
-        default: llvm-22.1.8
+        default: android-r416183b
         options:
           - android-r416183b
           - llvm-22.1.8
