@@ -17,13 +17,21 @@
 #  ✧ Credits ✧
 
  **Pzqqt** — upstream Marble kernel source and maintenance
+ 
  **osm0sis** — AnyKernel3 flashing framework
+ 
  **tiann** — KernelSU
+ 
 **KernelSU-Next team** — KernelSU-Next
+
  **SukiSU Ultra team** — SukiSU Ultra
+ 
  **ReSukiSU team** — ReSukiSU
+ 
  **simonpunk** — susfs4ksu patches
+ 
  **WildKernels** — reference CI and release patterns
+ 
  Xiaomi/MIUI kernel source maintainers
 
 ---
