@@ -1,0 +1,47 @@
+{
+  "none": {
+    "display": "No manager",
+    "repo": "",
+    "default_ref": "",
+    "setup_path": "",
+    "status": "stable",
+    "notes": "Plain kernel build with no root manager source integration."
+  },
+  "kernelsu": {
+    "display": "KernelSU",
+    "repo": "tiann/KernelSU",
+    "default_ref": "main",
+    "setup_path": "kernel/setup.sh",
+    "susfs_ref": "",
+    "status": "stable-no-susfs",
+    "notes": "Official KernelSU. SUSFS is disabled because current official refs do not accept the upstream generic SUSFS manager patch."
+  },
+  "kernelsu-next": {
+    "display": "KernelSU-Next",
+    "repo": "KernelSU-Next/KernelSU-Next",
+    "default_ref": "dev",
+    "susfs_repo": "pershoot/KernelSU-Next",
+    "susfs_ref": "dev-susfs",
+    "setup_path": "kernel/setup.sh",
+    "status": "official-default-forked-susfs",
+    "notes": "Official dev branch for non-SUSFS builds. SUSFS builds use pershoot/KernelSU-Next@dev-susfs, a fork branch based on official dev with SUSFS integration."
+  },
+  "sukisu-ultra": {
+    "display": "SukiSU Ultra",
+    "repo": "SukiSU-Ultra/SukiSU-Ultra",
+    "default_ref": "main",
+    "susfs_ref": "builtin",
+    "setup_path": "kernel/setup.sh",
+    "status": "official",
+    "notes": "Official main branch without SUSFS; official builtin branch is selected automatically when SUSFS is enabled."
+  },
+  "resukisu": {
+    "display": "ReSukiSU",
+    "repo": "ReSukiSU/ReSukiSU",
+    "default_ref": "main",
+    "susfs_ref": "main",
+    "setup_path": "kernel/setup.sh",
+    "status": "official",
+    "notes": "Official main branch includes manager-side SUSFS support."
+  }
+}
