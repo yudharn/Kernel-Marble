@@ -34,4 +34,22 @@ backup_current_boot() {
   fi;
 
   cp -f "$BOOTIMG" "$backup_img" || abort "Unable to save boot backup. Aborting...";
-  
+  {
+    echo "device=marble/marblein";
+    echo "slot=${slot_name}";
+    echo "source_block=${BLOCK}";
+    echo "created=${stamp}";
+    echo "backup=${backup_img}";
+  } > "$backup_txt" 2>/dev/null || true;
+
+  ui_print "Backup saved:";
+  ui_print "  ${backup_img}";
+}
+
+ui_print " ";
+ui_print "Supported devices: marble, marblein";
+ui_print "Current boot image will be backed up before flashing.";
+
+dump_boot;
+backup_current_boot;
+write_boot;
