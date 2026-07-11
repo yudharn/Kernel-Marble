@@ -42,11 +42,11 @@ on:
       source_repo:
         description: Kernel source repository
         required: true
-        default: yudharn/kernel_melt_rebase_xiaomi_marble
+        default: yudharn/android_kernel_xiaomi_marble
       source_ref:
         description: Kernel source branch, tag, or commit
         required: true
-        default: melt-rebase
+        default: melt-Guxin12-A
       build_scope:
         description: Build target set
         type: choice
